@@ -5,6 +5,7 @@ var port = Environment.GetEnvironmentVariable("PORT") ?? "80";
 builder.WebHost.UseUrls($"http://+:{port}");
 
 // Restante da configuração...
+builder.Services.AddSingleton<ScrumBoardApi.Services.CardService>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
