@@ -1,93 +1,51 @@
-using ScrumBoardApi.Models;
-using ScrumBoardApi.Services;
-
 var builder = WebApplication.CreateBuilder(args);
 
+// Configurar a porta usando a variável de ambiente PORT do Render
+var port = Environment.GetEnvironmentVariable("PORT") ?? "80";
+builder.WebHost.UseUrls($"http://+:{port}");
+
+// Restante da configuração...
+builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddSingleton<CardService>();
 
+// CORS - Permitir o frontend acessar o backend
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy =>
+    options.AddPolicy("AllowAll", policy =>
     {
         policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowAnyMethod();
     });
 });
 
 var app = builder.Build();
 
+// Habilitar Swagger em todos os ambientes (útil para verificar se o deploy funcionou)
 app.UseSwagger();
 app.UseSwaggerUI();
-app.UseCors();
 
-app.MapGet("/api/cards", (CardService svc) =>
-{
-    return Results.Ok(svc.GetAll());
-})
-.WithName("GetAllCards")
-.WithTags("Cards");
-
-app.MapGet("/api/cards/{id:guid}", (Guid id, CardService svc) =>
-{
-    var card = svc.GetById(id);
-    return card is not null ? Results.Ok(card) : Results.NotFound();
-})
-.WithName("GetCardById")
-.WithTags("Cards");
-
-app.MapGet("/api/cards/status/{status}", (string status, CardService svc) =>
-{
-    var cards = svc.GetByStatus(status);
-    return Results.Ok(cards);
-})
-.WithName("GetCardsByStatus")
-.WithTags("Cards");
-
-app.MapPost("/api/cards", (Card card, CardService svc) =>
-{
-    var created = svc.Add(card);
-    return Results.Created($"/api/cards/{created.Id}", created);
-})
-.WithName("CreateCard")
-.WithTags("Cards");
-
-app.MapPut("/api/cards/{id:guid}", (Guid id, Card updated, CardService svc) =>
-{
-    var card = svc.Update(id, updated);
-    return card is not null ? Results.Ok(card) : Results.NotFound();
-})
-.WithName("UpdateCard")
-.WithTags("Cards");
-
-app.MapPatch("/api/cards/{id:guid}/move", (Guid id, MoveRequest request, CardService svc) =>
-{
-    string[] validStatuses = { "Backlog", "ToDo", "Doing", "Testing", "Done" };
-
-    if (!validStatuses.Contains(request.Status, StringComparer.OrdinalIgnoreCase))
-    {
-        return Results.BadRequest(new
-        {
-            error = "Status inválido",
-            validStatuses
-        });
-    }
-
-    var card = svc.MoveCard(id, request.Status);
-    return card is not null ? Results.Ok(card) : Results.NotFound();
-})
-.WithName("MoveCard")
-.WithTags("Cards");
-
-app.MapDelete("/api/cards/{id:guid}", (Guid id, CardService svc) =>
-{
-    return svc.Delete(id) ? Results.NoContent() : Results.NotFound();
-})
-.WithName("DeleteCard")
-.WithTags("Cards");
+app.UseCors("AllowAll");
+app.UseAuthorization();
+app.MapControllers();
 
 app.Run();
+Ajuste no Dockerfile:
 
-public record MoveRequest(string Status);
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY *.csproj ./
+RUN dotnet restore
+COPY . .
+RUN dotnet publish -c Release -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+COPY --from=build /app/publish .
+
+# O Render define a variável PORT automaticamente
+# O Program.cs já lê essa variável
+EXPOSE 80
+
+ENTRYPOINT ["dotnet", "MeuBackend.dll"]
